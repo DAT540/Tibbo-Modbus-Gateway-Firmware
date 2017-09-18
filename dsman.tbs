@@ -286,8 +286,8 @@ public sub net_cmd_proc(byref s as string(MAX_NET_CMD_LEN), cmd_mode as cmd_mode
 			end if
 		end if
 
+		stg_data = right(s,len(s)-3)
 		if setting_name = "RD" or setting_name = "RG" then	' Signed settings
-			stg_data = right(s,len(s)-3)
 			dim res as byte
 			res = val(stg_data)
 			stg_data = str(res)
