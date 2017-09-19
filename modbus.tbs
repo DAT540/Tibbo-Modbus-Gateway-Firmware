@@ -232,21 +232,18 @@ sub modbus_out_buffer_garbage()
 
 	dim i, length as word
 	
-	if modbus_out_buffer_length > 0  then
-		
-		while(modbus_out_buffer((modbus_out_buffer_head - modbus_out_buffer_length + 1) and MODBUS_SERIAL_OUT_BUFFER_LENGTH_MASK) = 255)
-			modbus_out_buffer_get()				' get channelU FROM
-			modbus_out_buffer_get()				' get channelU TO
-			modbus_out_buffer_get()				' get shiftID 
-			length = modbus_out_buffer_get()	' get Length
-			for i = 1 to length
-				modbus_out_buffer_get()	' get data
-			next i
-			#if DEV_DEBUG_PRINT
-				dev_debugprint("ModBus. Buffer Operate: Garbaged packet, H: " + str(modbus_out_buffer_head) + ", L: " + str(modbus_out_buffer_length))
-			#endif
-		wend
-	end if
+	while((modbus_out_buffer_length > 0) and (modbus_out_buffer((modbus_out_buffer_head - modbus_out_buffer_length + 1) and MODBUS_SERIAL_OUT_BUFFER_LENGTH_MASK)) = 255)
+		modbus_out_buffer_get()				' get channelU FROM
+		modbus_out_buffer_get()				' get channelU TO
+		modbus_out_buffer_get()				' get shiftID 
+		length = modbus_out_buffer_get()	' get Length
+		for i = 1 to length
+			modbus_out_buffer_get()	' get data
+		next i
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("ModBus. Buffer Operate: Garbaged packet, H: " + str(modbus_out_buffer_head) + ", L: " + str(modbus_out_buffer_length))
+		#endif
+	wend
 	
 end sub
 
@@ -378,61 +375,68 @@ sub modbus_send_request_to_serial(byref data as string, sourceU as byte, destina
 	dim data_for_send as string
 	dim clientid as byte
 
-	if port_in_use(destination) = YES then
-		if ModBusSerialChannelsOperation(destination).OperationInProgress = true then
-			' SERIAL is in USE
-			' Store MODBUS packet to buffer
-			
-			#if DEV_DEBUG_PRINT
-				dev_debugprint("ModBus Store packet to buffer. H: " + str(modbus_out_buffer_head) + ", L: " + str(modbus_out_buffer_length))
-			#endif
-			modbus_store_packet(data, sourceU, destination or MODBUS_SERIAL_SOCKET_TYPE, shiftID)
-			
-		else
-			' SERIAL is free
-			if (sourceU and MODBUS_SOCKET_TYPE_FLAG) = MODBUS_SERIAL_SOCKET_TYPE then
-				' Source is SERIAL
-				' SERIAL -> SERIAL
-				transaction = 0
-				data_for_send = data
+	if ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_RTU or
+		ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_ASCII then
+		if port_in_use(destination) = YES then
+			if ModBusSerialChannelsOperation(destination).OperationInProgress = true then
+				' SERIAL is in USE
+				' Store MODBUS packet to buffer
 				
-			else
-				' Source is TCP
-				' TCP -> SERIAL
-				transaction = 256 * asc(mid(data, 1, 1)) + asc(mid(data, 2, 1))
-				data_for_send = mid(data, 7, 256 * asc(mid(data, 5, 1)) + asc(mid(data, 6, 1)))
-				
-			end if
-
-			if asc(mid(data_for_send, 1, 1)) <> 255 then		' if packet is BROADCAST - no responce waiting
-
-				ModBusSerialChannelsOperation(destination).TransactionID = transaction
-				ModBusSerialChannelsOperation(destination).OperationInProgress = true
-				ModBusSerialChannelsOperation(destination).TimeOut = timeout
-				ModBusSerialChannelsOperation(destination).SourceU = sourceU
-				ModBusSerialChannelsOperation(destination).ShiftID = shiftID
-			
-			else
 				#if DEV_DEBUG_PRINT
-					dev_debugprint("BROADCAST")
+					dev_debugprint("ModBus Store packet to buffer. H: " + str(modbus_out_buffer_head) + ", L: " + str(modbus_out_buffer_length))
 				#endif
-			end if
+				modbus_store_packet(data, sourceU, destination or MODBUS_SERIAL_SOCKET_TYPE, shiftID)
+				
+			else
+				' SERIAL is free
+				if (sourceU and MODBUS_SOCKET_TYPE_FLAG) = MODBUS_SERIAL_SOCKET_TYPE then
+					' Source is SERIAL
+					' SERIAL -> SERIAL
+					transaction = 0
+					data_for_send = data
+					
+				else
+					' Source is TCP
+					' TCP -> SERIAL
+					transaction = 256 * asc(mid(data, 1, 1)) + asc(mid(data, 2, 1))
+					data_for_send = mid(data, 7, 256 * asc(mid(data, 5, 1)) + asc(mid(data, 6, 1)))
+					
+				end if
 
-			#if PER_CHANNEL_STATUS_INDICATION=0
-				data_transmission_event(0) = YES
-			#else
-				data_transmission_event(destination) = YES
+				if asc(mid(data_for_send, 1, 1)) <> 255 then		' if packet is BROADCAST - no responce waiting
+
+					ModBusSerialChannelsOperation(destination).TransactionID = transaction
+					ModBusSerialChannelsOperation(destination).OperationInProgress = true
+					ModBusSerialChannelsOperation(destination).TimeOut = timeout
+					ModBusSerialChannelsOperation(destination).SourceU = sourceU
+					ModBusSerialChannelsOperation(destination).ShiftID = shiftID
+				
+				else
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("BROADCAST")
+					#endif
+				end if
+
+				#if PER_CHANNEL_STATUS_INDICATION=0
+					data_transmission_event(0) = YES
+				#else
+					data_transmission_event(destination) = YES
+				#endif
+
+				if ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_RTU then
+					modbus_send_serial_rtu(data_for_send, destination, shiftID)
+				else if ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_ASCII then
+					modbus_send_serial_ascii(data_for_send, destination, shiftID)
+				end if
+			end if
+		else
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Serial port not in use")
 			#endif
-
-			if ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_RTU then
-				modbus_send_serial_rtu(data_for_send, destination, shiftID)
-			else if ModBusSerialChannelsOperation(destination).SerialType = MODBUS_SERIAL_SLAVE_ASCII then
-				modbus_send_serial_ascii(data_for_send, destination, shiftID)
-			end if
 		end if
 	else
 		#if DEV_DEBUG_PRINT
-			dev_debugprint("Serial port not in use")
+			dev_debugprint("Serial port not in SLAVE mode")
 		#endif
 	end if
 end sub
