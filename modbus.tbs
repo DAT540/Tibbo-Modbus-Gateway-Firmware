@@ -775,6 +775,7 @@ sub modbus_tcp_receive(byref data as string, channelTCP as byte, portTCP as word
 	dim serials as byte
 	dim sockets as word
 	dim clientid as byte
+	dim port as boolean
 	
 	#if DEV_DEBUG_PRINT
 		dev_debugprint("ModBus TCP packet received. Channel : " + str(channelTCP) + ", Port : " + str(portTCP))
@@ -792,19 +793,23 @@ sub modbus_tcp_receive(byref data as string, channelTCP as byte, portTCP as word
 				for i = 0 to modbus_socks_number - 1
 					if modbus_socks(i) = channelTCP then
 						' MASTER channel
-						for j = 0 to MODBUS_RULES_ID_NUMBERS - 1
-							if ModBusRouteId(j).IdFrom <> 0 and ModBusRouteId(j).IdTo <> 0 then
-								if clientid >= ModBusRouteId(j).IdFrom and clientid <= ModBusRouteId(j).IdTo  then
-									modbus_send_request(serials, sockets, data, channelTCP or MODBUS_TCP_SOCKET_TYPE, ModBusRouteId(j).ChannelU, ModBusRouteId(j).IdShift)
-								end if
-							end if
-						next j
-
+						port = false
 						for j = 0 to MODBUS_RULES_PORT_NUMBERS - 1
 							if portTCP = ModBusRoutePort(j).TCPPort then
 								modbus_send_request(serials, sockets, data, channelTCP or MODBUS_TCP_SOCKET_TYPE, ModBusRoutePort(j).ChannelU, ModBusRoutePort(j).IdShift)
+								port = true
 							end if
 						next i
+						
+						if port = false then
+							for j = 0 to MODBUS_RULES_ID_NUMBERS - 1
+								if ModBusRouteId(j).IdFrom <> 0 and ModBusRouteId(j).IdTo <> 0 then
+									if clientid >= ModBusRouteId(j).IdFrom and clientid <= ModBusRouteId(j).IdTo  then
+										modbus_send_request(serials, sockets, data, channelTCP or MODBUS_TCP_SOCKET_TYPE, ModBusRouteId(j).ChannelU, ModBusRouteId(j).IdShift)
+									end if
+								end if
+							next j
+						end if
 
 						exit for
 					end if
